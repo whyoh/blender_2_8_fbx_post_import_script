@@ -11,10 +11,10 @@ Steps the script should implement:
 
 2: get the result of what remove doubles does right before creating faces. 
 
-3: get borders of diferent mesh islends that would be joined by remove doubles 
+3: get borders of diferent mesh islands that would be joined by remove doubles 
 
-4: store those edges relations in radians 
+4: store those edges relations, in "confronted pairs" maybe 
 
 5: apply remove doubles 
 
-6: for compared radians above a threshold mark the edge as hard
+6: for compared (degrees of face normals?)radians above a threshold mark the edge as hard
