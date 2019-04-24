@@ -9,7 +9,7 @@ from mathutils import Vector
 def showme(apply):
   if not apply:
     return
-  time.sleep(.35)
+  #time.sleep(.35)
   for window in bpy.context.window_manager.windows:
     screen = window.screen
     for area in screen.areas:
@@ -43,22 +43,21 @@ _apply = False
 
 # define if we should try merging again
 _mergeAgain = True
+_mergeAgainCount = 0
 
-# define the edge merger
-def edgeMerger():
+# define a treshold for making edges hard
+_hardAfter = 0.261799 # or 45 degrees
+
+def edgeTagger():
   # Lets start gathering the stuff we will use later
   ob=bpy.context.selected_objects[0]
   obData = ob.data
+  global _hardAfter
+  print("edgeTagger")
   print( _warnMsg[3] % str(len(obData.polygons)) )
-  _mergeAgain = False
   # Lets just make sure we are in edit mode before we begin
   if(ob.mode !='EDIT'):
     bpy.ops.object.mode_set(mode='EDIT' , toggle=False)
-  showme(_apply)
-  
-  # clean slate, deselect anything and show everything
-  bpy.ops.mesh.reveal()
-  bpy.ops.mesh.select_all(action='DESELECT')
   showme(_apply)
 
   # We are ready to begin the actual mesh editing
@@ -66,9 +65,53 @@ def edgeMerger():
   # We use Bmesh
   bm = bmesh.new()
   bm = bmesh.from_edit_mesh(obData)
+  for e in bm.edges:
+    if e.select:
+      #print(e)
+      if e.calc_face_angle_signed("none") > _hardAfter or e.calc_face_angle_signed("none") < (_hardAfter * -1):
+        e.smooth = False
+      else:
+        e.smooth = True
   print ( _warnMsg[4] % str(len(bm.faces)))
+  # return all changes to the actual mesh
+  bmesh.update_edit_mesh(ob.data, loop_triangles=True, destructive=True)
+  obData.calc_loop_triangles()
+
+  bpy.ops.object.mode_set(mode='OBJECT' , toggle=False)
   showme(_apply)
 
+# define the edge merger
+def edgeMerger():
+
+  # Lets start gathering the stuff we will use later
+  ob=bpy.context.selected_objects[0]
+  obData = ob.data
+  print( _warnMsg[3] % str(len(obData.polygons)) )
+  global _mergeAgain, _mergeAgainCount
+  _mergeAgain = False
+  
+  # Lets just make sure we are in edit mode before we begin
+  if(ob.mode !='EDIT'):
+    bpy.ops.object.mode_set(mode='EDIT' , toggle=False)
+    showme(_apply)
+  
+  # Runs only the first time the script start
+  if _mergeAgainCount == 0:
+    # clean slate, deselect anything and show everything
+    bpy.ops.mesh.reveal()
+    bpy.ops.mesh.select_all(action='DESELECT')
+    showme(_apply)
+  _mergeAgainCount += 1
+  
+  # We are ready to begin the actual mesh editing
+  # Documentation recomends that for any nitty gritty operations
+  # We use Bmesh
+  bm = bmesh.new()
+  bm = bmesh.from_edit_mesh(obData)
+  print ( _warnMsg[4] % str(len(bm.faces)))
+  showme(_apply)
+  findingDoubles = []
+  
   # Store a verts dict for referece
   edge_medians={}
 
@@ -87,59 +130,59 @@ def edgeMerger():
       # If this Edge's Median is equal to any other Median except itself
       if em == this_edge_median and (str(i) != str(edge.index)):
         print("Edge %s matches %s " % (str(i) ,str(edge.index)))
-        
+        edge.select = True
+
+        # TODO: Include some math from the custom normals to help decide if welded edges
+        # should be smooth[True False]
+        # Lets get some math on the normals
+        # having two edges, treat common vertex as individual
+        # option 1
+        # ((e1v1 + e1v2)/2)-e1 
+        # option 2
+        # e1v1.angle(e1v2) + e2v1.angle(e2v2)
+        '''
+        print ([
+        edge.verts[0].normal.angle(Vector([0,0,1])),edge.verts[1].normal.angle(Vector([0,0,1])),
+        bm.edges[int(i)].verts[0].normal.angle(Vector([0,0,1])),bm.edges[int(i)].verts[1].normal.angle(Vector([0,0,1]))
+        ])
+        '''
+
         # These lists will hold the welding params
         vert_keeper = []
         vert_welder = []
 
         # Loop over verts in the matched edge
         for vert in edge.verts:
-          print(["Vert co:      ",edge.index,vert.index ,vert.co])
-          print(["Vert no:      ",edge.index,vert.index, vert.normal])
           if vert not in vert_welder:
             vert_welder.append(vert)
         
         # Loop over verts in the matching edge
         # TODO: Is there a reason to maybe revert matching and matched?
+        # bottom edge being in matched in matcher allows edge welding stacks
         for vert in bm.edges[int(i)].verts:
-          print(["VertMatch co: ",i,vert.index ,vert.co])
-          print(["VertMatch no: ",i,vert.index, vert.normal])
           if vert not in vert_welder:
             vert_welder.append(vert)
           if vert not in vert_keeper:
             vert_keeper.append(vert)
-        
-        # Trying to look at weld options here
-        # bmesh.ops.find_doubles(bm, verts, keep_verts, dist)
-        # Build a tracemap of verts to merge thru weld
-        findingDoubles = bmesh.ops.find_doubles(bm, verts=vert_welder, keep_verts=vert_keeper, dist=0.0001)
-        
-        # Define if the resulting edge after weld should be hard or smooth
-
-        # Use core operator weld_verts, cause all the cool kids use it
-        bmesh.ops.weld_verts(bm , targetmap = findingDoubles["targetmap"])
-      
-      #print(["Edge Median: ", this_edge_median])
-      #print(["Edge Tag: ", edge.tag])
-
-      # return all changes to the actual mesh
-      #bmesh.update_edit_mesh(obData,True)
-      bmesh.update_edit_mesh(ob.data, loop_triangles=True, destructive=True)
-      obData.calc_loop_triangles()
-      showme(_apply)
-      
-      # Clear the screen after an iteration
-      os.system("cls")
-      
-      # free Bmesh
-      #bm.free()
-
-      # call thyself
-      _mergeAgain = True
-      #bpy.ops.object.mode_set(mode='OBJECT' , toggle=False)
-      #edgeMerger()
-    # Visually marked an edge as processed (for use with showme() mostly)
-    #edge.select = True
+             
+        # Build a tracemap list of verts to merge thru weld
+        findingDoubles.append(bmesh.ops.find_doubles(bm, verts=vert_welder, keep_verts=vert_keeper, dist=0.0001))
+  
+  # Use core operator weld_verts, cause all the cool kids use it
+  if len(findingDoubles):
+    for fd in findingDoubles:
+      for fd_vm,fd_vk in fd["targetmap"].items():
+        if fd_vm.is_valid and fd_vk.is_valid:
+          bmesh.ops.weld_verts(bm , targetmap = {fd_vm:fd_vk}) 
+        # Dead vertices in targetmap mean a merge didn't take place, set to try again
+        else:
+          _mergeAgain = True
+  
+  # return all changes to the actual mesh
+  bmesh.update_edit_mesh(ob.data, loop_triangles=True, destructive=True)
+  ob.data.calc_loop_triangles()
+  showme(_apply)
+  return
 # End edgeMerger()
 
 
@@ -160,40 +203,7 @@ else:
   print(_warnMsg[2])
   
   # call the iterative function that will call itself after it has finished mergin an edge
-
   while _mergeAgain:
     edgeMerger()
-  
-'''
-
-Edge1
-['vert co: ', 0, Vector((-0.04274683818221092, 1.6370863914489746, -0.044565267860889435))]
-['vert no: ', 0, Vector((-0.7777091264724731, -0.13971489667892456, -0.612901508808136))]
-['vert co: ', 2, Vector((-0.04317079111933708, 1.6509138345718384, -0.04676194116473198))]
-['vert no: ', 2, Vector((-0.6971747875213623, -0.10606074333190918, -0.7090122103691101))]
-['edge Median: ', Vector((-0.042958814650774, 1.6440000534057617, -0.04566360265016556))]
-
-Edge6
-['vert co: ', 0, Vector((-0.04274683818221092, 1.6370863914489746, -0.044565267860889435))]
-['vert no: ', 0, Vector((-0.7777091264724731, -0.13971489667892456, -0.612901508808136))]
-['vert co: ', 4, Vector((-0.04317079111933708, 1.6509138345718384, -0.04676194116473198))]
-['vert no: ', 4, Vector((-0.8149774670600891, -0.11520981043577194, -0.5679246783256531))]
-['edge Median: ', Vector((-0.042958814650774, 1.6440000534057617, -0.04566360265016556))]
-
-
-
-Edge5
-['vert co', 4, Vector((-0.04317079111933708, 1.6509138345718384, -0.04676194116473198))]
-['vert no', 4, Vector((-0.8149774670600891, -0.11520981043577194, -0.5679246783256531))]
-['vert co', 5, Vector((-0.05244690179824829, 1.6519113779067993, -0.03365299478173256))]
-['vert no', 5, Vector((-0.8300769925117493, -0.14721477031707764, -0.5378661751747131))]
-
-Edge25
-['vert co', 13, Vector((-0.04317079111933708, 1.6509138345718384, -0.04676194116473198))]
-['vert no', 13, Vector((-0.789111316204071, -0.22680334746837616, -0.5708444714546204))]
-['vert co', 14, Vector((-0.05244690179824829, 1.6519113779067993, -0.03365299478173256))]
-['vert no', 14, Vector((-0.85653156042099, -0.23453369736671448, -0.45972558856010437))]
-
-https://blender.stackexchange.com/questions/134798/finding-a-specific-face-vertex-edge-based-on-position-value-not-indices-value
-
-'''
+  edgeTagger()
+print("END OF PROGRAM")
