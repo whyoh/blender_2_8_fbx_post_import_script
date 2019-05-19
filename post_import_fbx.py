@@ -1,32 +1,9 @@
-import bpy, bmesh, time, warnings, os
+import bpy, bmesh, time, warnings, os, time
 from collections import defaultdict
 from mathutils import Vector
 
 
-# showme() updates all available 3dviews
-# Its purpose is allow me as a learning obbtuse brat 
-# to understand just what the heck the code is doing to the mesh
-def showme(apply):
-  if not apply:
-    return
-  #time.sleep(.35)
-  for window in bpy.context.window_manager.windows:
-    screen = window.screen
-    for area in screen.areas:
-        if area.type == 'VIEW_3D':
-          #print("found a 3d view window")
-          with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
 
-# vertex_as_tuple() returns a given vertex s coordinates as a touple
-def vertex_as_tuple(v):
-    return tuple(v.co)
-
-# median_get() calculates the median point of an edge given as a set of verts
-def median_get(verts_sel):
-  Vco_sel= [v.co for v in verts_sel]
-  return sum(Vco_sel, Vector()) / len(Vco_sel)
 
 # Some helpful console level messages
 _warnMsg = [
@@ -48,6 +25,9 @@ _mergeAgainCount = 0
 # define a treshold for making edges hard
 _hardAfter = 0.261799 # or 45 degrees
 
+# measure execution time
+_startTime = time.time()
+_endTime = 0
 def edgeTagger():
   # Lets start gathering the stuff we will use later
   ob=bpy.context.selected_objects[0]
@@ -67,8 +47,8 @@ def edgeTagger():
   bm = bmesh.from_edit_mesh(obData)
   for e in bm.edges:
     if e.select:
-      #print(e)
-      if e.calc_face_angle_signed("none") > _hardAfter or e.calc_face_angle_signed("none") < (_hardAfter * -1):
+      print(e)
+      if e.calc_face_angle_signed(0) > _hardAfter or e.calc_face_angle_signed(0) < (_hardAfter * -1):
         e.smooth = False
       else:
         e.smooth = True
@@ -116,8 +96,9 @@ def edgeMerger():
   edge_medians={}
 
   # Loop over edges 
+  #for edg_pos,edge in enumerate(bm.edges):
   for edg_pos,edge in enumerate(bm.edges):
-    print("Edge %s in pos: %s" % (str(edge.index), str(edg_pos)))
+    #print("Edge %s in pos: %s" % (str(edge.index), str(edg_pos)))
     this_edge_median = median_get(edge.verts)
     edge_medians[str(edge.index)] = this_edge_median
     bm.edges.ensure_lookup_table()
@@ -129,7 +110,7 @@ def edgeMerger():
       
       # If this Edge's Median is equal to any other Median except itself
       if em == this_edge_median and (str(i) != str(edge.index)):
-        print("Edge %s matches %s " % (str(i) ,str(edge.index)))
+        #print("Edge %s matches %s " % (str(i) ,str(edge.index)))
         edge.select = True
 
         # TODO: Include some math from the custom normals to help decide if welded edges
@@ -185,6 +166,34 @@ def edgeMerger():
   return
 # End edgeMerger()
 
+## Helper functions below
+
+# showme() updates all available 3dviews
+# Its purpose is allow me as a learning obbtuse brat 
+# to understand just what the heck the code is doing to the mesh
+def showme(apply):
+  if not apply:
+    return
+  #time.sleep(.35)
+  for window in bpy.context.window_manager.windows:
+    screen = window.screen
+    for area in screen.areas:
+        if area.type == 'VIEW_3D':
+          #print("found a 3d view window")
+          with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+
+# vertex_as_tuple() returns a given vertex s coordinates as a touple
+def vertex_as_tuple(v):
+  return tuple(v.co)
+
+# median_get() calculates the median point of an edge given as a set of verts
+def median_get(verts_sel):
+  Vco_sel= [v.co for v in verts_sel]
+  return sum(Vco_sel, Vector()) / len(Vco_sel)
+
+## Actual runtime starts here
 
 # Lets avoid trying to do anything if we have more than one object selected
 if len(bpy.context.selected_objects) != 1:
@@ -206,4 +215,8 @@ else:
   while _mergeAgain:
     edgeMerger()
   edgeTagger()
-print("END OF PROGRAM")
+_endTime = time.time()
+_totalTime= _endTime - _startTime
+
+print("END OF PROGRAM \nTotal Time: %s" % str(_totalTime))
+ 
